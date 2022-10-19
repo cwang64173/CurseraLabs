@@ -1,0 +1,133 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Chongyang Wang"
+date: "10/18/2022"
+output:
+  html_document:
+    df_print: paged
+---
+
+Introduction
+
+This document is the report of the Peer Assessment project for Coursera’s Practical Machine Learning. The Knit to HTML doesn't work. The result HTML is blank. The Knit to WORD works. It is a RStudio markdown file to be published in word format. It contains the code and analysis for the course quiz. The machine learning algorithm described here is deployed to the 20 test cases available in the test data and the predictions are submitted in appropriate format to the Course Project Prediction Quiz for automated grading.
+
+
+```{R}
+# load libraries
+
+library(caret)
+library(corrplot)
+library(corrplot)
+library(data.table)
+library(gbm)
+library(ggplot2)
+library(knitr)
+library(lattice)
+library(plotly)
+library(randomForest)
+library(rattle)
+library(RColorBrewer)
+library(rpart)
+library(rpart.plot)
+
+data_training <- read.csv("pml-training.csv")
+data_quiz <- read.csv("pml-testing.csv")
+dim(data_training)
+dim(data_quiz)
+
+# remove NA
+in_training  <- createDataPartition(data_training$classe, p=0.70, list=FALSE)
+training_set <- data_training[ in_training, ]
+testing_set  <- data_training[-in_training, ]
+dim(training_set)
+dim(testing_set)
+
+# remove NZV variables
+nzv_var <- nearZeroVar(training_set)
+training_set <- training_set[ , -nzv_var]
+testing_set  <- testing_set [ , -nzv_var]
+dim(training_set)
+
+
+# remove mostly NA variables
+na_var <- sapply(training_set, function(x) mean(is.na(x))) > 0.95
+training_set <- training_set[ , na_var == FALSE]
+testing_set  <- testing_set [ , na_var == FALSE]
+dim(training_set)
+dim(testing_set)
+
+# remove columns 1 to 5 identification variables 
+training_set <- training_set[ , -(1:5)]
+testing_set  <- testing_set [ , -(1:5)]
+dim(training_set)
+dim(testing_set)
+
+# correlation among variables
+corr_matrix <- cor(training_set[ , -54])
+corrplot(corr_matrix, order = "FPC", method = "circle", type = "lower",
+         tl.cex = 0.6, tl.col = rgb(0, 0, 0))
+
+# try Decision Tree model
+set.seed(1967)
+fit_DT <- rpart(classe ~ ., data = training_set, method="class")
+fancyRpartPlot(fit_DT)
+
+predict_DT <- predict(fit_DT, newdata = testing_set, type="class")
+conf_matrix_DT <- confusionMatrix(table(predict_DT, testing_set$classe))
+conf_matrix_DT
+
+plot(conf_matrix_DT$table, col = conf_matrix_DT$byClass, 
+     main = paste("Decision Tree Model: Predictive Accuracy =",
+                  round(conf_matrix_DT$overall['Accuracy'], 4)))
+
+# try Generalized Boosted Model 
+set.seed(1967)
+ctrl_GBM <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+fit_GBM  <- train(classe ~ ., data = training_set, method = "gbm",
+                  trControl = ctrl_GBM, verbose = FALSE)
+fit_GBM$finalModel
+
+predict_GBM <- predict(fit_GBM, newdata = testing_set)
+conf_matrix_GBM <- confusionMatrix(table(predict_GBM, testing_set$classe))
+conf_matrix_GBM
+
+# try Random Forest
+set.seed(1967)
+ctrl_RF <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+fit_RF  <- train(classe ~ ., data = training_set, method = "rf",
+                 trControl = ctrl_RF, verbose = FALSE)
+fit_RF$finalModel
+
+predict_RF <- predict(fit_RF, newdata = testing_set)
+conf_matrix_RF <- confusionMatrix(table(predict_RF, testing_set$classe))
+conf_matrix_RF
+```
+
+
+Applying the Best Predictive Model to the Test Data To summarize, the predictive accuracy of the three models evaluated is the followings:
+
+- Decision Tree Model: is the worst,  has the low mean and the highest standard deviation. 
+- GBM Model:  has a good mean accuracy but a lower accuracy than RF.
+- Random Fores Model: has the highest mean accuracy and lowest standard deviation
+
+
+Checking if there are anything to gain from increasing the number of boosting iterations.
+
+```{R}
+plot(fit_RF)
+
+print(fit_RF$bestTune)
+```
+
+The predictive accuracy of the Random Forest model is the best at 99.8 %.  Accuracy is not going to be better and further tuning would only yield a little gain. 
+
+Make Predictions Deciding to predict with this model.
+Decision Tree Model: 74.68 % Generalized Boosted Model: 98.73 % Random Forest Model: 99.76 %
+
+The Random Forest model is selected to make predictions on the 20 data points from the original testing dataset (data_quiz).
+
+```{R}
+cat("Predictions: ", paste(predict(fit_RF, data_quiz)))
+```
+
+
